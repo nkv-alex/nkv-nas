@@ -1,6 +1,11 @@
 import os
 import subprocess
 import shutil
+from rich.console import Console
+from rich.text import Text
+
+
+
 
 main_dir= ""
 
@@ -95,10 +100,19 @@ def check_integrity():
         run(f"md5deep -r '{target_dir}' > '{checksum_file}'", check=False)
         print(f"[OK] Checksums saved to {checksum_file}")
 
+def make_full_nas():
+    
+    console = Console()
+    console.print(Text("ARE YOU SURE THIS YOU WANT THIS THIS WILL WIPE ALL DATA FROM THE EXTRA DISKS AND MAKE A FULL RAID SETUP", style="bold magenta", justify="center"), justify="center")
+    confirmation = input("Type 'YES' to confirm: ").strip()
+    if confirmation != "YES":
+        print("[INFO] Operation cancelled by user.")
+        return
+    
 
 def main():
     print("=== System Configuration Script ===")
-    print("1. Configure Samba.\n2. Check File Integrity.\n3. Exit.")
+    print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \nX. Exit.")
     choice = input("Select an option [1-3]: ").strip()
     match choice:
         case "1":
@@ -106,6 +120,12 @@ def main():
         case "2":
             check_integrity()
         case "3":
+            run("clear")
+            make_full_nas()
+        case "4":
+            shutil.copytree(main_dir, f"{main_dir}_backup", dirs_exist_ok=True)
+            print(f"[OK] Full backup created at {main_dir}_backup")
+        case "X" | "x":
             print("Exiting...")
         case _:
             print("Invalid option. Exiting...")# TODO: necesario añadir raid y interfaz de web
@@ -137,3 +157,4 @@ program writed by nkv also know as nkv-alex
 # TODO: Esto es una tarea pendiente (naranja)
 # * Esto es información clave (verde)
 # // Comentario tachado (gris)
+# NOTE: nota
