@@ -4,11 +4,14 @@ import subprocess
 import shutil
 from rich.console import Console
 from rich.text import Text
+from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for
 
 
-
-
+app = Flask(__name__)
 main_dir= ""
+
+
+
 
 def run(cmd):
     try:
@@ -20,7 +23,7 @@ def run(cmd):
         return False
 
 
-def config_samba():#TODO: añadir la opcion de autoconfig si ya hicieron un raid antes
+def config_samba():
     print("=== Automatic SAMBA configuration ===")
 
 
@@ -35,9 +38,12 @@ def config_samba():#TODO: añadir la opcion de autoconfig si ya hicieron un raid
 
     # Directorio compartido
     default_share = "/srv/samba/shared"
-    shared_dir = input(f"Enter shared directory [{default_share}]: ").strip() or default_share
-    main_dir=os.path.dirname(shared_dir)
-    os.makedirs(shared_dir, exist_ok=True)
+    if main_dir != "":
+        shared_dir = input(f"Enter shared directory [{default_share}]: ").strip() or default_share
+        main_dir=os.path.dirname(shared_dir)
+        os.makedirs(shared_dir, exist_ok=True)
+    else:
+        shared_dir = main_dir
 
     # Permisos
     os.system(f"chmod 2770 '{shared_dir}'")
@@ -100,11 +106,12 @@ def check_integrity():
     if awnser == "y":
         print("[INFO] Installing md5deep...") # * no encuentro la forma de verificar si ya está instalado esto es mucho mas sencillo
         run("apt install md5deep -y")
-        target_dir = main_dir
-        print(f"[STEP] Generating MD5 checksums for files in {target_dir} ...")
-        checksum_file = os.path.join(target_dir, "checksums.md5")
-        run(f"md5deep -r '{target_dir}' > '{checksum_file}'")
-        print(f"[OK] Checksums saved to {checksum_file}")
+    
+    target_dir = main_dir
+    print(f"[STEP] Generating MD5 checksums for files in {target_dir} ...")
+    checksum_file = os.path.join(target_dir, "checksums.md5")
+    run(f"md5deep -r '{target_dir}' > '{checksum_file}'")
+    print(f"[OK] Checksums saved to {checksum_file}")
 
 
 
@@ -123,107 +130,108 @@ def make_full_nas():
         print("[ERROR] No disks selected. Exiting...")
         return
     
-    def format_disk():
-        tamanos = {}
-        for disk in selled_disks:
-            try:
-                cmd = f"lsblk -b -dn -o SIZE {disk}"
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                if res.returncode == 0:
-                    tamanos[disk] = int(res.stdout.strip())
-                else:
-                    print(f"[ERROR] Could not read size of {disk}")
-            except Exception as e:
-                print(f"[ERROR] {disk}: {e}")
-                return
-        if not tamanos:
-            print("[ERROR] Could not determine any disk size.")
+    
+    tamanos = {}
+    for disk in selled_disks:
+        try:
+            cmd = f"lsblk -b -dn -o SIZE {disk}"
+            res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if res.returncode == 0:
+                tamanos[disk] = int(res.stdout.strip())
+            else:
+                print(f"[ERROR] Could not read size of {disk}")
+        except Exception as e:
+            print(f"[ERROR] {disk}: {e}")
+            return
+        
+    if not tamanos:
+        print("[ERROR] Could not determine any disk size.")
         return
 
-        print("\nDetected disk sizes:")
-        for d, sz in tamanos.items():
-            print(f"  {d}: {sz / (1024**3):.2f} GB")
+    print("\nDetected disk sizes:")
+    for d, sz in tamanos.items():
+        print(f"  {d}: {sz / (1024**3):.2f} GB")
 
-        disco_min = min(tamanos, key=tamanos.get)
-        min_gb = tamanos[disco_min] / (1024**3)
-        print(f"\n[INFO] Smallest disk: {disco_min} ({min_gb:.2f} GB)")
+    disco_min = min(tamanos, key=tamanos.get)
+    min_gb = tamanos[disco_min] / (1024**3)
+    print(f"\n[INFO] Smallest disk: {disco_min} ({min_gb:.2f} GB)")
 
-        tamaño_input = input(f"Enter partition size (<= {min_gb:.2f}GB, e.g., 25GB or 500MB): ").upper().strip()
+    tamaño_input = input(f"Enter partition size (<= {min_gb:.2f}GB, e.g., 25GB or 500MB): ").upper().strip()
 
-        if tamaño_input.endswith("GB"):
-            tamaño_bytes = float(tamaño_input[:-2]) * (1024**3)
-        elif tamaño_input.endswith("MB"):
-            tamaño_bytes = float(tamaño_input[:-2]) * (1024**2)
-        else:
-            print("[ERROR] Invalid size format. Use GB or MB suffix.")
-            return
+    if tamaño_input.endswith("GB"):
+        tamaño_bytes = float(tamaño_input[:-2]) * (1024**3)
+    elif tamaño_input.endswith("MB"):
+        tamaño_bytes = float(tamaño_input[:-2]) * (1024**2)
+    else:
+        print("[ERROR] Invalid size format. Use GB or MB suffix.")
+        return
 
-        if tamaño_bytes > tamanos[disco_min]:
-            print("[ERROR] Size exceeds smallest disk capacity.")
-            return
+    if tamaño_bytes > tamanos[disco_min]:
+        print("[ERROR] Size exceeds smallest disk capacity.")
+        return
 
-        tipo_fs = input("Enter filesystem type (e.g., ext4, xfs, btrfs): ").strip()
+    tipo_fs = input("Enter filesystem type (e.g., ext4, xfs, btrfs): ").strip()
 
-        print("\n[INFO] Starting complete wipe and partitioning...\n")
+    print("\n[INFO] Starting complete wipe and partitioning...\n")
 
-        for disco in discos:
-            print(f"[TASK] Processing {disco}...")
+    for disco in selled_disks:
+        print(f"[TASK] Processing {disco}...")
 
-            # Unmount all filesystems
-            print("[STEP] Unmounting all filesystems on this disk...")
-            run(f"lsblk -ln -o MOUNTPOINT {disco} | grep -v '^$' | xargs -r -n1 umount -f || true")
+        # Unmount all filesystems
+        print("[STEP] Unmounting all filesystems on this disk...")
+        run(f"lsblk -ln -o MOUNTPOINT {disco} | grep -v '^$' | xargs -r -n1 umount -f || true")
 
-            # Remove active device mapper entries
-            print("[STEP] Removing any device mapper entries...")
-            run(f"dmsetup remove -f {disco}* || true")
+        # Remove active device mapper entries
+        print("[STEP] Removing any device mapper entries...")
+        run(f"dmsetup remove -f {disco}* || true")
 
-            # Remove Logical Volumes
-            print("[STEP] Removing all Logical Volumes on this disk...")
-            run("lvdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 lvremove -ff -y || true")
+        # Remove Logical Volumes
+        print("[STEP] Removing all Logical Volumes on this disk...")
+        run("lvdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 lvremove -ff -y || true")
 
-            # Remove Volume Groups
-            print("[STEP] Removing all Volume Groups on this disk...")
-            run("vgdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 vgremove -ff -y || true")
+        # Remove Volume Groups
+        print("[STEP] Removing all Volume Groups on this disk...")
+        run("vgdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 vgremove -ff -y || true")
 
-            # Remove Physical Volumes
-            print("[STEP] Removing all Physical Volumes on this disk...")
-            run("pvdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 pvremove -ff -y || true")
+        # Remove Physical Volumes
+        print("[STEP] Removing all Physical Volumes on this disk...")
+        run("pvdisplay --colon 2>/dev/null | cut -d: -f1 | xargs -r -n1 pvremove -ff -y || true")
 
-            # Stop and clean any RAID arrays
-            print("[STEP] Stopping any RAID arrays containing this disk...")
-            run("mdadm --detail --scan | awk '{print $2}' | xargs -r -n1 mdadm --stop || true")
-            run(f"mdadm --zero-superblock {disco} || true")
+        # Stop and clean any RAID arrays
+        print("[STEP] Stopping any RAID arrays containing this disk...")
+        run("mdadm --detail --scan | awk '{print $2}' | xargs -r -n1 mdadm --stop || true")
+        run(f"mdadm --zero-superblock {disco} || true")
 
-            # Wipe all signatures and partition table
-            print("[STEP] Wiping all signatures and partition table...")
-            run(f"wipefs -a {disco} || true")
-            run(f"sgdisk --zap-all {disco} || true")
+        # Wipe all signatures and partition table
+        print("[STEP] Wiping all signatures and partition table...")
+        run(f"wipefs -a {disco} || true")
+        run(f"sgdisk --zap-all {disco} || true")
 
-            # Fast zero for header
-            print("[STEP] Zeroing first 10MB for clean slate...")
-            run(f"dd if=/dev/zero of={disco} bs=1M count=10 conv=fdatasync status=none || true")
-            run(f"blkdiscard {disco} || true")
-            run(f'sudo sgdisk --zap-all {disco}')
+        # Fast zero for header
+        print("[STEP] Zeroing first 10MB for clean slate...")
+        run(f"dd if=/dev/zero of={disco} bs=1M count=10 conv=fdatasync status=none || true")
+        run(f"blkdiscard {disco} || true")
+        run(f'sudo sgdisk --zap-all {disco}')
 
-            print(f"[OK] Disk {disco} fully cleaned and ready for reuse.\n")
+        print(f"[OK] Disk {disco} fully cleaned and ready for reuse.\n")
 
-            # Create new GPT structure and partition
-            if not run(f"parted -s {disco} mklabel gpt"):
-                print(f"[ERROR] Failed to create GPT on {disco}")
-                continue
+        # Create new GPT structure and partition
+        if not run(f"parted -s {disco} mklabel gpt"):
+            print(f"[ERROR] Failed to create GPT on {disco}")
+            continue
 
-            run(f"parted -s {disco} mkpart primary 1MiB {tamaño_input}")
+        run(f"parted -s {disco} mkpart primary 1MiB {tamaño_input}")
 
-            # Get new partition name
-            part = disco + "1" if "nvme" not in disco else disco + "p1"
-            print(f"[INFO] Formatting {part} as {tipo_fs}...")
-            run(f"mkfs.{tipo_fs} -F {part}")
+        # Get new partition name
+        part = disco + "1" if "nvme" not in disco else disco + "p1"
+        print(f"[INFO] Formatting {part} as {tipo_fs}...")
+        run(f"mkfs.{tipo_fs} -F {part}")
 
-            print(f"[OK] {disco} fully wiped and formatted ({tipo_fs}, {tamaño_input}).\n")
+        print(f"[OK] {disco} fully wiped and formatted ({tipo_fs}, {tamaño_input}).\n")
 
-            print("[INFO] All selected disks cleaned and formatted uniformly.")
+        print("[INFO] All selected disks cleaned and formatted uniformly.")
 
-    format_disk()
+
 
 
 
@@ -277,30 +285,129 @@ def make_full_nas():
     run("mkdir -p /etc/mdadm")
     run(f"mdadm --detail --scan >> /etc/mdadm/mdadm.conf")
 
+    # Crear Volume Group y Logical Volume
+    print("[INFO] Creating Volume Group and Logical Volume...")
+    
+    raid_device = f"/dev/{nombre_raid}"
+    vg_name = input("Enter Volume Group name [vg_nas]: ").strip() or "vg_nas"
+    lv_name = input("Enter Logical Volume name [lv_storage]: ").strip() or "lv_storage"
+    lv_size = input("Enter Logical Volume size (e.g., 100GB, 500GB): ").strip()
+    
+    # Crear Physical Volume
+    print(f"[STEP] Creating Physical Volume on {raid_device}...")
+    run(f"pvcreate -f {raid_device}")
+    
+    # Crear Volume Group
+    print(f"[STEP] Creating Volume Group '{vg_name}'...")
+    run(f"vgcreate {vg_name} {raid_device}")
+    
+    # Crear Logical Volume
+    print(f"[STEP] Creating Logical Volume '{lv_name}' with size {lv_size}...")
+    run(f"lvcreate -L {lv_size} -n {lv_name} {vg_name}")
+    
+    # Formatear Logical Volume
+    lv_path = f"/dev/{vg_name}/{lv_name}"
+    print(f"[STEP] Formatting {lv_path} as {tipo_fs}...")
+    run(f"mkfs.{tipo_fs} -F {lv_path}")
+    
+    # Montar Logical Volume
+    mount_point = input("Enter mount point [/mnt/nas]: ").strip() or "/mnt/nas"
+    os.makedirs(mount_point, exist_ok=True)
+    print(f"[STEP] Mounting {lv_path} to {mount_point}...")
+    run(f"mount {lv_path} {mount_point}")
+    
+    print(f"[OK] Logical Volume mounted at {mount_point}")
+    main_dir=mount_point
+    
 
-    #TODO: necesario assignar la creaciion automatica de un LV y un VG
+def web_interface():
+    global main_dir
+    
+    HTML_TEMPLATE = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Explorador RAID</title>
+        <style>
+            body { font-family: Arial; margin: 40px; }
+            a { text-decoration: none; color: blue; }
+            a:hover { text-decoration: underline; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        </style>
+    </head>
+    <body>
+        <h1>Explorador del RAID</h1>
+        <p>Ruta actual: {{ current_path }}</p>
+        <table>
+            <tr><th>Nombre</th><th>Tamaño</th><th>Última modificación</th></tr>
+            {% for item in items %}
+                <tr>
+                    <td><a href="{{ item.url }}">{{ item.name }}</a></td>
+                    <td>{{ item.size }}</td>
+                    <td>{{ item.mtime }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+        <hr>
+        <form method="post" enctype="multipart/form-data">
+            <input type="file" name="file" multiple>
+            <input type="submit" value="Subir archivo(s)">
+        </form>
+    </body>
+    </html>
+    '''
 
+    @app.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+    @app.route('/<path:path>', methods=['GET', 'POST'])
+    def browse(path):
+        full_path = os.path.join(main_dir, path)
+        
+        if not os.path.realpath(full_path).startswith(os.path.realpath(main_dir)):
+            return "Acceso denegado", 403
+        
+        if not os.path.exists(full_path):
+            return "Ruta no encontrada", 404
+        
+        if request.method == 'POST':
+            for file in request.files.getlist('file'):
+                if file.filename and os.path.isdir(full_path):
+                    file.save(os.path.join(full_path, file.filename))
+            return redirect(request.url)
+        
+        if os.path.isfile(full_path):
+            return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
+        
+        items = []
+        if path:
+            items.append({'name': '.. (padre)', 'url': url_for('browse', path=os.path.dirname(path.rstrip('/'))), 'size': '-', 'mtime': '-'})
+        
+        try:
+            for entry in sorted(os.listdir(full_path), key=lambda x: (not os.path.isdir(os.path.join(full_path, x)), x.lower())):
+                entry_path = os.path.join(full_path, entry)
+                rel_path = os.path.join(path, entry).replace('\\', '/')
+                stat = os.stat(entry_path)
+                size = stat.st_size if os.path.isfile(entry_path) else '-'
+                from datetime import datetime
+                mtime_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
+                url = url_for('browse', path=rel_path)
+                if os.path.isdir(entry_path):
+                    entry += '/'
+                    url += '/'
+                items.append({'name': entry, 'url': url, 'size': f'{size:,} bytes' if size != '-' else '-', 'mtime': mtime_str})
+        except PermissionError:
+            return "Permiso denegado", 403
+        
+        return render_template_string(HTML_TEMPLATE, current_path='/' + path, items=items)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    print(f"[INFO] Starting web interface on http://0.0.0.0:5000")
+    print(f"[INFO] Serving files from: {main_dir}")
+    app.run(host='0.0.0.0', port=5000, debug=False)
 
 def main():
     print("=== System Configuration Script ===")
-    print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \nX. Exit.")
-    choice = input("Select an option [1-3]: ").strip()
+    print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \n5. Web Interface\nX. Exit.")
+    choice = input("Select an option [1-5]: ").strip()
     match choice:
         case "1":
             config_samba()
@@ -312,10 +419,12 @@ def main():
         case "4":
             shutil.copytree(main_dir, f"{main_dir}_backup", dirs_exist_ok=True)
             print(f"[OK] Full backup created at {main_dir}_backup")
+        case "5":
+            web_interface()
         case "X" | "x":
             print("Exiting...")
         case _:
-            print("Invalid option. Exiting...")# TODO: necesario añadir raid y interfaz de web
+            print("Invalid option. Exiting...")
 
 if __name__ == "__main__":
     main()
