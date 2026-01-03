@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 app = Flask(__name__)
-main_dir = ""
+main_dir = "none"
 
 
 
@@ -40,7 +40,7 @@ def config_samba():
 
     # Directorio compartido
     default_share = "/srv/samba/shared"
-    if main_dir != "":
+    if main_dir != "none":
         shared_dir = input(f"Enter shared directory [{default_share}]: ").strip() or default_share
         main_dir=os.path.dirname(shared_dir)
         os.makedirs(shared_dir, exist_ok=True)
