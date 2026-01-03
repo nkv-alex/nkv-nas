@@ -5,10 +5,11 @@ import shutil
 from rich.console import Console
 from rich.text import Text
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for
+from datetime import datetime
 
 
 app = Flask(__name__)
-main_dir= ""
+main_dir = ""
 
 
 
@@ -16,14 +17,15 @@ main_dir= ""
 def run(cmd):
     try:
         print(f"[EXEC] {cmd}")
-        subprocess.run(cmd, shell=True, check=True)
-        return True
+        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+        return result
     except subprocess.CalledProcessError as e:
         print(f"[ERROR] Command failed: {e}")
-        return False
+        return None
 
 
 def config_samba():
+    global main_dir
     print("=== Automatic SAMBA configuration ===")
 
 
@@ -94,10 +96,12 @@ def config_samba():
     run("systemctl restart smbd nmbd")
 
     status = run("systemctl is-active smbd")
-    if "active" in status.stdout:
-        ip = run("hostname -I | awk '{print $1}'").stdout.strip()
-        print(f"[OK] Samba active. Shared folder: {shared_dir}")
-        print(f"[INFO] Access from Windows via: \\\\{ip}\\shared")
+    if status and "active" in status.stdout:
+        ip_result = run("hostname -I | awk '{print $1}'")
+        if ip_result:
+            ip = ip_result.stdout.strip()
+            print(f"[OK] Samba active. Shared folder: {shared_dir}")
+            print(f"[INFO] Access from Windows via: \\\\{ip}\\shared")
     else:
         print("[ERROR] Samba service could not start. Check logs with: journalctl -u smbd")
 
@@ -118,6 +122,7 @@ def check_integrity():
 
 
 def make_full_nas():
+    global main_dir
     console = Console()
     console.print(Text("ARE YOU SURE THIS YOU WANT THIS THIS WILL WIPE ALL DATA FROM THE EXTRA DISKS AND MAKE A FULL RAID SETUP", style="bold magenta", justify="center"), justify="center")
     confirmation = input("Type 'YES' to confirm: ").strip()
@@ -231,35 +236,13 @@ def make_full_nas():
 
         print("[INFO] All selected disks cleaned and formatted uniformly.")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     nombre_raid = input("Enter RAID name (e.g., md0): ")
-
 
     def crear_raid(tipo, discos, nombre_raid):
         nivel = str(tipo)
         discos_str = " ".join(discos)
         cmd = f"mdadm --create /dev/{nombre_raid} --level={nivel} --raid-devices={len(discos)} {discos_str}"
         return run(cmd)
-
-
-
-
-
-
-
-
 
     num_disks = len(selled_disks.split())
     num_disks = int(num_disks)
@@ -317,8 +300,7 @@ def make_full_nas():
     run(f"mount {lv_path} {mount_point}")
     
     print(f"[OK] Logical Volume mounted at {mount_point}")
-    main_dir=mount_point
-    
+    main_dir = mount_point
 
 def web_interface():
     global main_dir
@@ -388,7 +370,6 @@ def web_interface():
                 rel_path = os.path.join(path, entry).replace('\\', '/')
                 stat = os.stat(entry_path)
                 size = stat.st_size if os.path.isfile(entry_path) else '-'
-                from datetime import datetime
                 mtime_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
                 url = url_for('browse', path=rel_path)
                 if os.path.isdir(entry_path):
@@ -406,7 +387,7 @@ def web_interface():
 
 def main():
     print("=== System Configuration Script ===")
-    print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \n5. Web Interface\nX. Exit.")
+    print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \n5. Start Web Interface\nX. Exit.")
     choice = input("Select an option [1-5]: ").strip()
     match choice:
         case "1":
@@ -425,6 +406,12 @@ def main():
             print("Exiting...")
         case _:
             print("Invalid option. Exiting...")
+
+
+
+
+
+
 
 if __name__ == "__main__":
     main()
