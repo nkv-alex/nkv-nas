@@ -2,14 +2,34 @@ from dis import disco
 import os
 import subprocess
 import shutil
+import json
 from rich.console import Console
 from rich.text import Text
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for
 from datetime import datetime
 
-
 app = Flask(__name__)
-main_dir = "none"
+CONFIG_FILE = "/home/nkv/Desktop/nkv-nas/config.json"
+
+def load_config():
+    """Carga la configuración desde JSON"""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {"main_dir": "none"}
+    return {"main_dir": "none"}
+
+def save_config(config):
+    """Guarda la configuración en JSON"""
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+    print(f"[OK] Configuración guardada en {CONFIG_FILE}")
+
+config = load_config()
+main_dir = config.get("main_dir", "none")
 
 
 
@@ -25,7 +45,7 @@ def run(cmd):
 
 
 def config_samba():
-    global main_dir
+    global main_dir, config
     print("=== Automatic SAMBA configuration ===")
 
 
@@ -43,6 +63,8 @@ def config_samba():
     match main_dir:
         case "none":
             main_dir = input(f"Enter main directory for Samba share [{default_share}]: ").strip() or default_share
+            config["main_dir"] = main_dir
+            save_config(config)
             shared_dir = main_dir
         case _:
             print(f"[INFO] Using existing main directory for Samba share: {main_dir}")
@@ -126,7 +148,7 @@ def check_integrity():
 
 
 def make_full_nas():
-    global main_dir
+    global main_dir, config
     console = Console()
     console.print(Text("ARE YOU SURE THIS YOU WANT THIS THIS WILL WIPE ALL DATA FROM THE EXTRA DISKS AND MAKE A FULL RAID SETUP", style="bold magenta", justify="center"), justify="center")
     confirmation = input("Type 'YES' to confirm: ").strip()
@@ -305,6 +327,8 @@ def make_full_nas():
     
     print(f"[OK] Logical Volume mounted at {mount_point}")
     main_dir = mount_point
+    config["main_dir"] = mount_point
+    save_config(config)
 
 def web_interface():
     global main_dir
@@ -390,7 +414,12 @@ def web_interface():
     app.run(host='0.0.0.0', port=5000, debug=False)
 
 def main():
+    global config, main_dir
+    config = load_config()
+    main_dir = config.get("main_dir", "none")
+    
     print("=== System Configuration Script ===")
+    print(f"[INFO] Directorio actual: {main_dir}")
     print("1. Configure Samba.\n2. Check File Integrity.\n3. Make full NAS \n4 make full backup \n5. Start Web Interface\nX. Exit.")
     choice = input("Select an option [1-5]: ").strip()
     match choice:
