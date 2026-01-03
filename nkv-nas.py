@@ -40,12 +40,16 @@ def config_samba():
 
     # Directorio compartido
     default_share = "/srv/samba/shared"
-    if main_dir != "none":
-        shared_dir = input(f"Enter shared directory [{default_share}]: ").strip() or default_share
-        main_dir=os.path.dirname(shared_dir)
-        os.makedirs(shared_dir, exist_ok=True)
-    else:
-        shared_dir = main_dir
+    match main_dir:
+        case "none":
+            main_dir = input(f"Enter main directory for Samba share [{default_share}]: ").strip() or default_share
+            shared_dir = main_dir
+        case _:
+            print(f"[INFO] Using existing main directory for Samba share: {main_dir}")
+            shared_dir = main_dir
+
+    
+        
 
     # Permisos
     os.system(f"chmod 2770 '{shared_dir}'")
