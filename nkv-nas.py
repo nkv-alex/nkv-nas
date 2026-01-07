@@ -7,6 +7,8 @@ from rich.console import Console
 from rich.text import Text
 from flask import Flask, render_template_string, send_from_directory, request, redirect, url_for
 from datetime import datetime
+import zipfile
+import io
 
 app = Flask(__name__)
 CONFIG_FILE = "/home/nkv/Desktop/nkv-nas/config.json"
@@ -344,25 +346,40 @@ def web_interface():
             a:hover { text-decoration: underline; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+            .action-btn { margin-left: 10px; padding: 5px 10px; background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 3px; }
+            .action-btn:hover { background-color: #45a049; }
+            .delete-btn { background-color: #f44336; }
+            .delete-btn:hover { background-color: #da190b; }
         </style>
     </head>
     <body>
         <h1>Explorador del RAID</h1>
         <p>Ruta actual: {{ current_path }}</p>
         <table>
-            <tr><th>Nombre</th><th>Tamaño</th><th>Última modificación</th></tr>
+            <tr><th>Nombre</th><th>Tamaño</th><th>Última modificación</th><th>Acciones</th></tr>
             {% for item in items %}
                 <tr>
                     <td><a href="{{ item.url }}">{{ item.name }}</a></td>
                     <td>{{ item.size }}</td>
                     <td>{{ item.mtime }}</td>
+                    <td>
+                        {% if item.is_file %}
+                            <a href="{{ item.download_url }}" class="action-btn">Descargar</a>
+                        {% endif %}
+                    </td>
                 </tr>
             {% endfor %}
         </table>
         <hr>
+        <h3>Subir archivos</h3>
         <form method="post" enctype="multipart/form-data">
             <input type="file" name="file" multiple>
             <input type="submit" value="Subir archivo(s)">
+        </form>
+        <hr>
+        <h3>Descargar directorio como ZIP</h3>
+        <form method="post" action="{{ download_zip_url }}">
+            <input type="submit" value="Descargar carpeta como ZIP">
         </form>
     </body>
     </html>
@@ -390,7 +407,7 @@ def web_interface():
         
         items = []
         if path:
-            items.append({'name': '.. (padre)', 'url': url_for('browse', path=os.path.dirname(path.rstrip('/'))), 'size': '-', 'mtime': '-'})
+            items.append({'name': '.. (padre)', 'url': url_for('browse', path=os.path.dirname(path.rstrip('/'))), 'size': '-', 'mtime': '-', 'is_file': False, 'download_url': '#'})
         
         try:
             for entry in sorted(os.listdir(full_path), key=lambda x: (not os.path.isdir(os.path.join(full_path, x)), x.lower())):
@@ -400,14 +417,65 @@ def web_interface():
                 size = stat.st_size if os.path.isfile(entry_path) else '-'
                 mtime_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
                 url = url_for('browse', path=rel_path)
+                is_file = os.path.isfile(entry_path)
+                download_url = url_for('download_file', path=rel_path) if is_file else '#'
+                
                 if os.path.isdir(entry_path):
                     entry += '/'
                     url += '/'
-                items.append({'name': entry, 'url': url, 'size': f'{size:,} bytes' if size != '-' else '-', 'mtime': mtime_str})
+                items.append({'name': entry, 'url': url, 'size': f'{size:,} bytes' if size != '-' else '-', 'mtime': mtime_str, 'is_file': is_file, 'download_url': download_url})
         except PermissionError:
             return "Permiso denegado", 403
         
-        return render_template_string(HTML_TEMPLATE, current_path='/' + path, items=items)
+        download_zip_url = url_for('download_zip', path=path) if path else url_for('download_zip', path='')
+        return render_template_string(HTML_TEMPLATE, current_path='/' + path, items=items, download_zip_url=download_zip_url)
+
+    @app.route('/download/<path:path>')
+    def download_file(path):
+        full_path = os.path.join(main_dir, path)
+        
+        if not os.path.realpath(full_path).startswith(os.path.realpath(main_dir)):
+            return "Acceso denegado", 403
+        
+        if not os.path.isfile(full_path):
+            return "Archivo no encontrado", 404
+        
+        return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path), as_attachment=True)
+
+    @app.route('/download-zip/<path:path>', methods=['POST'])
+    def download_zip(path):
+        full_path = os.path.join(main_dir, path) if path else main_dir
+        
+        if not os.path.realpath(full_path).startswith(os.path.realpath(main_dir)):
+            return "Acceso denegado", 403
+        
+        if not os.path.isdir(full_path):
+            return "Directorio no encontrado", 404
+        
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for root, dirs, files in os.walk(full_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, full_path)
+                    zip_file.write(file_path, arcname)
+        
+        zip_buffer.seek(0)
+        folder_name = os.path.basename(full_path) or "raid_backup"
+        return send_from_directory(
+            io.BytesIO(),
+            f"{folder_name}.zip",
+            mimetype='application/zip',
+            as_attachment=True,
+            environ_base={'wsgi.url_scheme': 'http'}
+        ) if False else app.make_response((
+            zip_buffer.getvalue(),
+            200,
+            {
+                'Content-Disposition': f'attachment; filename="{folder_name}.zip"',
+                'Content-Type': 'application/zip'
+            }
+        ))
 
     print(f"[INFO] Starting web interface on http://0.0.0.0:5000")
     print(f"[INFO] Serving files from: {main_dir}")
