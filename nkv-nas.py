@@ -339,48 +339,95 @@ def web_interface():
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset="utf-8">
         <title>Explorador RAID</title>
         <style>
-            body { font-family: Arial; margin: 40px; }
-            a { text-decoration: none; color: blue; }
-            a:hover { text-decoration: underline; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
-            .action-btn { margin-left: 10px; padding: 5px 10px; background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 3px; }
-            .action-btn:hover { background-color: #45a049; }
-            .delete-btn { background-color: #f44336; }
-            .delete-btn:hover { background-color: #da190b; }
+            :root{--bg:#0f172a;--card:#0b1220;--accent:#6ee7b7;--muted:#94a3b8;--table-header:rgba(255,255,255,0.06)}
+            body{font-family:Inter,Arial,sans-serif;margin:0;background:linear-gradient(180deg,#071025 0%, #0b1b2b 100%);color:#e6eef8}
+            .container{max-width:1100px;margin:32px auto;padding:24px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:10px;box-shadow:0 6px 20px rgba(2,6,23,0.6)}
+            header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+            h1{margin:0;font-size:22px;color:var(--accent)}
+            .path{color:var(--muted);font-size:14px}
+            .controls{display:flex;gap:8px;align-items:center}
+            .btn{padding:8px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:600}
+            .btn-primary{background:linear-gradient(90deg,#10b981,#06b6d4);color:#001219}
+            .btn-ghost{background:transparent;color:var(--accent);border:1px solid rgba(110,231,183,0.12)}
+            .upload-input{display:inline-block}
+            .table-wrap{overflow:auto;margin-top:12px}
+            table{width:100%;border-collapse:collapse;font-size:14px}
+            th,td{padding:12px 10px;text-align:left}
+            th{background:var(--table-header);color:var(--muted);font-weight:600;position:sticky;top:0}
+            tr{border-bottom:1px solid rgba(255,255,255,0.03)}
+            tr:hover{background:rgba(255,255,255,0.02)}
+            td .name{display:flex;align-items:center;gap:8px}
+            .folder::before{content:"📁";margin-right:6px}
+            .file::before{content:"📄";margin-right:6px}
+            .action-btn{padding:6px 10px;border-radius:6px;text-decoration:none;color:#042027;background:#06b6d4}
+            .action-btn:hover{opacity:0.9}
+            .download-btn{background:linear-gradient(90deg,#16a34a,#22c55e);color:white}
+            .delete-btn{background:linear-gradient(90deg,#ef4444,#f97316);color:white}
+            .footer{margin-top:18px;display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px}
+            @media(max-width:700px){.controls{flex-direction:column;align-items:flex-end}.path{font-size:13px}}
+            .dark{--bg:#0b1220}
         </style>
     </head>
     <body>
-        <h1>Explorador del RAID</h1>
-        <p>Ruta actual: {{ current_path }}</p>
-        <table>
-            <tr><th>Nombre</th><th>Tamaño</th><th>Última modificación</th><th>Acciones</th></tr>
-            {% for item in items %}
-                <tr>
-                    <td><a href="{{ item.url }}">{{ item.name }}</a></td>
-                    <td>{{ item.size }}</td>
-                    <td>{{ item.mtime }}</td>
-                    <td>
-                        {% if item.is_file %}
-                            <a href="{{ item.download_url }}" class="action-btn">Descargar</a>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-        </table>
-        <hr>
-        <h3>Subir archivos</h3>
-        <form method="post" enctype="multipart/form-data">
-            <input type="file" name="file" multiple>
-            <input type="submit" value="Subir archivo(s)">
-        </form>
-        <hr>
-        <h3>Descargar directorio como ZIP</h3>
-        <form method="post" action="{{ download_zip_url }}">
-            <input type="submit" value="Descargar carpeta como ZIP">
-        </form>
+    <div class="container">
+    <header>
+    <div>
+    <h1>Explorador del RAID</h1>
+    <p class="path">Ruta actual: <strong>{{ current_path }}</strong></p>
+    </div>
+    <div class="controls">
+    <form method="post" enctype="multipart/form-data" id="uploadForm" class="upload-input" style="margin-right:8px">
+    <input type="file" name="file" id="fileInput" multiple style="display:none">
+    <label for="fileInput" class="btn btn-ghost">Seleccionar archivo(s)</label>
+    <button type="submit" form="uploadForm" class="btn btn-primary">Subir</button>
+    </form>
+    <button class="btn btn-ghost" id="toggleTheme">Modo oscuro</button>
+    </div>
+    </header>
+
+    <div class="table-wrap">
+    <table>
+    <tr><th>Nombre</th><th>Tamaño</th><th>Última modificación</th><th>Acciones</th></tr>
+    {% for item in items %}
+        <tr>
+            <td class="name {{ 'file' if item.is_file else 'folder' }}">
+                <a href="{{ item.url }}" style="color:inherit;text-decoration:none">{{ item.name }}</a>
+            </td>
+            <td>{{ item.size }}</td>
+            <td>{{ item.mtime }}</td>
+            <td>
+                {% if item.is_file %}
+                    <a href="{{ item.download_url }}" class="action-btn download-btn">Descargar</a>
+                {% else %}
+                    <span style="color:var(--muted)">—</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </table>
+    </div>
+
+    <div class="footer">
+    <div>Archivos: {{ items|length }}</div>
+    <div>
+    <form method="post" action="{{ download_zip_url }}" style="display:inline">
+    <button class="btn btn-primary" type="submit">Descargar carpeta como ZIP</button>
+    </form>
+    </div>
+    </div>
+
+    </div>
+
+    <script>
+    const btn = document.getElementById('toggleTheme');
+    btn.addEventListener('click', ()=> {
+        document.documentElement.classList.toggle('dark');
+        btn.textContent = document.documentElement.classList.contains('dark') ? 'Modo claro' : 'Modo oscuro';
+    });
+    </script>
     </body>
     </html>
     '''
