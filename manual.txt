@@ -1,0 +1,38 @@
+MANUAL DE USO
+===========================================
+Fecha de emisión: 2026-4-14
+Autor: nkv-alex
+Autor Manual: alexandr Tuceac
+
+------------------------------------------------------------
+1. DESCRIPCIÓN GENERAL
+------------------------------------------------------------
+Este modulo crea automticamente y hostea localmente un sistema de nas mediante samba a una pagina web
+Cada módulo está diseñado para ejecución con privilegios root.
+
+------------------------------------------------------------
+2.Modulo nkv-nas.py
+------------------------------------------------------------
+OBJETIVO: crea automticamente y hostea localmente un sistema de nas mediante samba a una pagina web
+
+FUNCIONALIDADES CLAVE:
+· crear volumenes raid eficientes
+· instalar y configurar servicio de samba
+· exportarlo a una pagina web en el puerto 80
+
+------------------------------------------------------------
+3. REQUISITOS DE SISTEMA
+------------------------------------------------------------
+ • Sistema operativo:Debian 13.
+ • Permisos: ejecución con privilegios root (sudo).
+ • Red: interfaces funcionales internas/externas para NAT y descubrimiento.
+
+ 
+------------------------------------------------------------
+4. AUTOR Y SOPORTE
+------------------------------------------------------------
+Desarrollado por: nkv-alex
+Versión inicial: 2025
+Uso interno autorizado. Contactar al administrador de sistemas para soporte.
+
+============================================================
