@@ -6,4 +6,4 @@ Standards-Version: 4.6.2
 
 Package: nkv-nas
 Architecture: all
-Depends: python3
+Depends: python3 python3-requests
